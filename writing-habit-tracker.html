@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Writing Habit Tracker</title>
+
+  <!-- ═══════════════════════════════════════════════════
+       STEP 1: Paste your Google OAuth Client ID below.
+       Replace the empty string with your actual Client ID.
+       Example: '123456789-abc.apps.googleusercontent.com'
+  ═══════════════════════════════════════════════════ -->
+  <script>
+    const GOOGLE_CLIENT_ID = '';   // ← PASTE YOUR CLIENT ID HERE
+  </script>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    /* ── Reset & base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --green-50:  #EAF3DE;
+      --green-100: #C0DD97;
+      --green-200: #97C459;
+      --green-400: #639922;
+      --green-600: #3B6D11;
+      --green-800: #27500A;
+      --green-900: #173404;
+      --bg:        #ffffff;
+      --bg2:       #f6f6f4;
+      --bg3:       #efefec;
+      --border:    rgba(0,0,0,0.12);
+      --border2:   rgba(0,0,0,0.22);
+      --text:      #1a1a18;
+      --text2:     #5a5a56;
+      --text3:     #8a8a84;
+      --radius:    10px;
+      --radius-lg: 14px;
+      --shadow:    0 2px 12px rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:    #1c1c1a;
+        --bg2:   #252522;
+        --bg3:   #2e2e2b;
+        --border: rgba(255,255,255,0.10);
+        --border2:rgba(255,255,255,0.20);
+        --text:  #f0f0ec;
+        --text2: #a0a09a;
+        --text3: #68685f;
+        --green-50: #1a2e0a;
+        --green-100:#2a4a12;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg3);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    /* ── App shell ── */
+    .app {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 2rem;
+    }
+    .logo {
+      width: 36px; height: 36px;
+      background: var(--green-600);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .topbar h1 { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+    .topbar p  { font-size: 12px; color: var(--text2); }
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Connect screen ── */
+    .connect-screen {
+      text-align: center;
+      padding: 3rem 2rem;
+    }
+    .connect-icon {
+      width: 64px; height: 64px;
+      background: var(--green-50);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.25rem;
+    }
+    .connect-icon svg { width: 32px; height: 32px; stroke: var(--green-600); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .connect-screen h2 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .connect-screen p  { font-size: 14px; color: var(--text2); line-height: 1.6; margin-bottom: 1.5rem; }
+    .connect-screen .note { font-size: 11px; color: var(--text3); margin-top: 10px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 18px; border-radius: var(--radius);
+      font-size: 14px; font-weight: 500; cursor: pointer;
+      border: none; transition: all 0.15s; text-decoration: none;
+    }
+    .btn-green {
+      background: var(--green-600); color: #fff;
+    }
+    .btn-green:hover { background: var(--green-800); }
+    .btn-outline {
+      background: transparent;
+      border: 0.5px solid var(--border2);
+      color: var(--text);
+    }
+    .btn-outline:hover { background: var(--bg2); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* ── Input row ── */
+    .input-row {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .doc-input {
+      flex: 1; min-width: 200px;
+      padding: 9px 14px;
+      border: 0.5px solid var(--border2);
+      border-radius: var(--radius);
+      font-size: 13px;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .doc-input:focus { border-color: var(--green-400); }
+    .doc-input::placeholder { color: var(--text3); }
+
+    /* ── Status bar ── */
+    .status-bar {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text2);
+      background: var(--bg2);
+      border-radius: 8px;
+      padding: 7px 12px;
+      margin-bottom: 1rem;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green  { background: var(--green-400); }
+    .dot-amber  { background: #EF9F27; }
+    .dot-red    { background: #E24B4A; }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+    .stat-card {
+      background: var(--bg2);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .stat-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 600; letter-spacing: -0.5px; }
+    .stat-value.green { color: var(--green-600); }
+
+    /* ── Month nav ── */
+    .month-nav {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 12px;
+    }
+    .month-nav h3 { font-size: 15px; font-weight: 600; flex: 1; }
+    .month-nav .nav-btn {
+      width: 30px; height: 30px;
+      border-radius: 7px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      font-size: 18px; line-height: 1;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .month-nav .nav-btn:hover { background: var(--bg2); }
+
+    /* ── Year pills ── */
+    .year-row {
+      display: flex; gap: 6px; flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .year-pill {
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 0.5px solid var(--border);
+      background: transparent;
+      color: var(--text2);
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .year-pill.active {
+      background: var(--green-600);
+      color: #fff;
+      border-color: var(--green-600);
+    }
+
+    /* ── Heatmap ── */
+    .heatmap-card {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 1rem;
+    }
+    .day-labels {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .day-label { font-size: 11px; color: var(--text3); text-align: center; }
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .day-cell {
+      aspect-ratio: 1;
+      border-radius: 5px;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.1s;
+      border: 0.5px solid transparent;
+    }
+    .day-cell:hover { transform: scale(1.14); border-color: rgba(0,0,0,0.2); z-index: 2; }
+    .day-cell.empty { pointer-events: none; background: transparent; }
+    .day-cell.l0 { background: var(--bg2); }
+    .day-cell.l1 { background: #C0DD97; }
+    .day-cell.l2 { background: #97C459; }
+    .day-cell.l3 { background: #639922; }
+    .day-cell.l4 { background: #3B6D11; }
+    .day-cell.l5 { background: #27500A; }
+    .day-cell.today { outline: 2px solid var(--green-400); outline-offset: 1px; }
+    .day-num {
+      position: absolute;
+      top: 2px; left: 3px;
+      font-size: 9px;
+      color: rgba(0,0,0,0.35);
+      line-height: 1;
+      pointer-events: none;
+    }
+    @media (prefers-color-scheme: dark) {
+      .day-num { color: rgba(255,255,255,0.3); }
+      .day-cell.l1,.day-cell.l2,.day-cell.l3 .day-num { color: rgba(0,0,0,0.4); }
+    }
+
+    /* ── Legend ── */
+    .legend {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--text3);
+      margin-top: 10px;
+    }
+    .legend-cells { display: flex; gap: 3px; }
+    .lc { width: 13px; height: 13px; border-radius: 3px; }
+
+    /* ── Tooltip ── */
+    .tooltip {
+      position: fixed;
+      background: var(--bg);
+      border: 0.5px solid var(--border2);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      pointer-events: none;
+      display: none;
+      z-index: 999;
+      box-shadow: var(--shadow);
+      min-width: 170px;
+    }
+    .tt-date  { font-size: 12px; color: var(--text2); margin-bottom: 3px; }
+    .tt-count { font-size: 16px; font-weight: 600; color: var(--green-600); }
+    .tt-label { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+    /* ── Hint box ── */
+    .hint { font-size: 12px; color: var(--text2); background: var(--bg2); border-radius: 8px; padding: 10px 14px; line-height: 1.7; }
+    .hint code { background: var(--bg3); border-radius: 4px; padding: 1px 5px; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; }
+
+    /* ── Loading spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error notice ── */
+    .error-box {
+      background: #FCEBEB;
+      border: 0.5px solid #F09595;
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #A32D2D;
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      font-size: 11px;
+      color: var(--text3);
+      text-align: center;
+      margin-top: 1rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 500px) {
+      .stats-row { grid-template-columns: 1fr 1fr; }
+      .connect-screen { padding: 2rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    </div>
+    <div>
+      <h1>Writing habit tracker</h1>
+      <p>Your novel writing history — visualized</p>
+    </div>
+    <div class="topbar-right" id="topbar-right"></div>
+  </div>
+
+  <!-- ═══ SCREEN: Connect ═══ -->
+  <div id="screen-connect" class="card connect-screen">
+    <div class="connect-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    </div>
+    <h2>Connect your Google Doc</h2>
+    <p>Sign in with Google so this tracker can read<br>your document's revision history and show<br>how consistently you've been writing.</p>
+    <button class="btn btn-green" id="sign-in-btn" onclick="signIn()">
+      <svg viewBox="0 0 24 24" style="width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M20.28 11.18H12v2.73h4.78c-.46 2.37-2.5 4.09-4.78 4.09A5.27 5.27 0 0 1 6.73 12a5.27 5.27 0 0 1 5.27-5.27c1.31 0 2.5.48 3.41 1.27L17.5 6a8.73 8.73 0 0 0-5.5-2 8.73 8.73 0 0 0-8.73 8.73A8.73 8.73 0 0 0 12 21.45c4.95 0 8.45-3.5 8.45-8.45 0-.64-.06-1.24-.17-1.82z"/></svg>
+      Sign in with Google
+    </button>
+    <p class="note">Read-only access &middot; Your data never leaves your browser &middot; Free forever</p>
+    <div id="client-id-warning" style="display:none; margin-top:16px; font-size:12px; color:#A32D2D; background:#FCEBEB; border-radius:8px; padding:10px 14px; text-align:left; line-height:1.6;">
+      ⚠️ <strong>Client ID not set.</strong> Open this HTML file in a text editor, find the line<br>
+      <code style="background:rgba(0,0,0,0.08); border-radius:4px; padding:1px 5px;">const GOOGLE_CLIENT_ID = '';</code><br>
+      and paste your Google OAuth Client ID between the quotes. See the setup guide below.
+    </div>
+  </div>
+
+  <!-- ═══ SCREEN: Load document ═══ -->
+  <div id="screen-doc" style="display:none;">
+    <div class="card">
+      <div id="status-bar" class="status-bar">
+        <div class="dot dot-green" id="status-dot"></div>
+        <span id="status-text">Signed in — ready to load your document</span>
+      </div>
+
+      <div id="error-box" class="error-box"></div>
+
+      <div class="input-row">
+        <input class="doc-input" id="doc-url" type="url"
+               placeholder="Paste your Google Doc URL here…" />
+        <button class="btn btn-green" id="load-btn" onclick="loadDoc()">
+          <span id="load-btn-label">Load history</span>
+        </button>
+      </div>
+
+      <div class="hint">
+        <strong>How to get your Doc URL:</strong> Open your novel in Google Docs → copy the URL from the browser address bar. It looks like:<br>
+        <code>https://docs.google.com/document/d/1aBcDeFgHiJkLmN.../edit</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SCREEN: Heatmap ═══ -->
+  <div id="screen-heatmap" style="display:none;">
+    <div class="stats-row" id="stats-row"></div>
+
+    <div class="year-row" id="year-row"></div>
+
+    <div class="heatmap-card">
+      <div class="month-nav">
+        <button class="nav-btn" onclick="prevMonth()" aria-label="Previous month">&#8249;</button>
+        <h3 id="month-title"></h3>
+        <button class="nav-btn" onclick="nextMonth()" aria-label="Next month">&#8250;</button>
+      </div>
+
+      <div class="day-labels" aria-hidden="true">
+        <div class="day-label">Sun</div>
+        <div class="day-label">Mon</div>
+        <div class="day-label">Tue</div>
+        <div class="day-label">Wed</div>
+        <div class="day-label">Thu</div>
+        <div class="day-label">Fri</div>
+        <div class="day-label">Sat</div>
+      </div>
+      <div class="cal-grid" id="cal-grid" role="grid" aria-label="Writing activity calendar"></div>
+
+      <div class="legend" aria-label="Activity intensity legend">
+        <span>Less</span>
+        <div class="legend-cells" aria-hidden="true">
+          <div class="lc" style="background:var(--bg2)"></div>
+          <div class="lc" style="background:#C0DD97"></div>
+          <div class="lc" style="background:#97C459"></div>
+          <div class="lc" style="background:#639922"></div>
+          <div class="lc" style="background:#3B6D11"></div>
+          <div class="lc" style="background:#27500A"></div>
+        </div>
+        <span>More</span>
+      </div>
+    </div>
+
+    <button class="btn btn-outline btn-sm" onclick="backToDoc()" style="margin-bottom:1rem;">
+      ← Load a different document
+    </button>
+  </div>
+
+  <!-- Setup guide (always visible at bottom) -->
+  <details class="card" style="margin-top:1.5rem;">
+    <summary style="cursor:pointer; font-size:14px; font-weight:600; user-select:none; list-style:none; display:flex; align-items:center; gap:8px;">
+      <span style="font-size:16px;">📋</span>
+      Setup guide — how to get your Google OAuth Client ID
+    </summary>
+    <div style="margin-top:1rem; font-size:13px; color:var(--text2); line-height:1.8;">
+
+      <p style="margin-bottom:12px;">This is a one-time setup that takes about 5 minutes. It's free and you don't need to publish anything.</p>
+
+      <ol style="padding-left:1.2rem; display:flex; flex-direction:column; gap:14px;">
+        <li>
+          <strong style="color:var(--text);">Go to Google Cloud Console</strong><br>
+          Open <a href="https://console.cloud.google.com" target="_blank" style="color:var(--green-600);">console.cloud.google.com</a> and sign in with your Google account (the same one you use for Google Docs).
+        </li>
+        <li>
+          <strong style="color:var(--text);">Create a new project</strong><br>
+          Click the project dropdown at the top → <em>New Project</em> → name it anything (e.g. "Writing Tracker") → click <em>Create</em>.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Enable the Google Drive API</strong><br>
+          In the left menu go to <em>APIs &amp; Services → Library</em>. Search for <strong>Google Drive API</strong> → click it → click <em>Enable</em>.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Configure the OAuth consent screen</strong><br>
+          Go to <em>APIs &amp; Services → OAuth consent screen</em>.<br>
+          • Choose <strong>External</strong> → click <em>Create</em>.<br>
+          • Fill in App name (e.g. "Writing Tracker") and your email → click <em>Save and Continue</em>.<br>
+          • On the Scopes page, click <em>Save and Continue</em> (no changes needed).<br>
+          • On the Test Users page, add your own Google email → <em>Save and Continue</em>.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Create an OAuth Client ID</strong><br>
+          Go to <em>APIs &amp; Services → Credentials</em> → click <em>+ Create Credentials → OAuth client ID</em>.<br>
+          • Application type: <strong>Web application</strong><br>
+          • Name: anything (e.g. "Writing Tracker Web")<br>
+          • Under <strong>Authorized JavaScript origins</strong>, click <em>Add URI</em> and add:<br>
+          &nbsp;&nbsp;<code style="background:var(--bg3); border-radius:4px; padding:1px 6px;">http://localhost</code> (if running locally) or your actual domain if hosted online.<br>
+          • Click <em>Create</em>.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Copy your Client ID</strong><br>
+          A dialog appears with your <strong>Client ID</strong> — it ends in <code style="background:var(--bg3); border-radius:4px; padding:1px 6px;">.apps.googleusercontent.com</code>. Copy it.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Paste it into this file</strong><br>
+          Open <code style="background:var(--bg3); border-radius:4px; padding:1px 6px;">writing-habit-tracker.html</code> in any text editor (Notepad, TextEdit, VS Code).<br>
+          Find the line near the top that says:<br>
+          <code style="background:var(--bg3); border-radius:4px; padding:2px 8px; display:inline-block; margin:4px 0;">const GOOGLE_CLIENT_ID = '';</code><br>
+          Replace the empty quotes with your Client ID:<br>
+          <code style="background:var(--bg3); border-radius:4px; padding:2px 8px; display:inline-block; margin:4px 0;">const GOOGLE_CLIENT_ID = '123456789-abc.apps.googleusercontent.com';</code><br>
+          Save the file.
+        </li>
+        <li>
+          <strong style="color:var(--text);">Open the file and sign in</strong><br>
+          Double-click the HTML file to open it in your browser. Click <em>Sign in with Google</em>, paste your Google Doc URL, and your heatmap will appear!
+        </li>
+      </ol>
+
+      <div style="margin-top:16px; background:var(--bg2); border-radius:8px; padding:12px 14px; font-size:12px; color:var(--text2);">
+        <strong style="color:var(--text);">💡 Tip — hosting online (optional):</strong><br>
+        If you want to access this from any device, upload the HTML file to <a href="https://pages.github.com" target="_blank" style="color:var(--green-600);">GitHub Pages</a> (free). Then add your GitHub Pages URL as an authorized origin in your Google Cloud Console credential instead of <code style="background:var(--bg3); border-radius:3px; padding:1px 4px;">http://localhost</code>.
+      </div>
+    </div>
+  </details>
+
+  <div class="footer">
+    Read-only · No data stored on any server · Works entirely in your browser
+  </div>
+
+</div><!-- end .app -->
+
+<!-- Floating tooltip -->
+<div class="tooltip" id="tooltip" role="tooltip" aria-live="polite">
+  <div class="tt-date"  id="tt-date"></div>
+  <div class="tt-count" id="tt-count"></div>
+  <div class="tt-label" id="tt-label"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════
+   State
+═══════════════════════════════════ */
+let tokenClient  = null;
+let accessToken  = null;
+let dailyData    = {};          // { "YYYY-MM-DD": revisionCount }
+let currentYear  = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
+let allYears     = [];
+
+const MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December'
+];
+
+/* ═══════════════════════════════════
+   Boot
+═══════════════════════════════════ */
+window.addEventListener('load', () => {
+  if (!GOOGLE_CLIENT_ID) {
+    document.getElementById('client-id-warning').style.display = 'block';
+    document.getElementById('sign-in-btn').disabled = true;
+    document.getElementById('sign-in-btn').style.opacity = '0.5';
+    return;
+  }
+  waitForGIS();
+});
+
+function waitForGIS(attempts = 0) {
+  if (window.google && window.google.accounts) {
+    initGIS();
+  } else if (attempts < 40) {
+    setTimeout(() => waitForGIS(attempts + 1), 250);
+  } else {
+    showError('Google sign-in library failed to load. Check your internet connection.');
+  }
+}
+
+function initGIS() {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    callback: handleToken
+  });
+}
+
+/* ═══════════════════════════════════
+   Auth
+═══════════════════════════════════ */
+function signIn() {
+  if (!GOOGLE_CLIENT_ID) return;
+  if (!tokenClient) { waitForGIS(); return; }
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function handleToken(resp) {
+  if (resp.error) {
+    showError('Sign-in failed: ' + resp.error);
+    return;
+  }
+  accessToken = resp.access_token;
+  document.getElementById('screen-connect').style.display = 'none';
+  document.getElementById('screen-doc').style.display = 'block';
+  document.getElementById('topbar-right').innerHTML =
+    `<button class="btn btn-outline btn-sm" onclick="signOut()">Sign out</button>`;
+}
+
+function signOut() {
+  if (window.google && google.accounts && accessToken) {
+    google.accounts.oauth2.revoke(accessToken);
+  }
+  accessToken = null;
+  dailyData = {};
+  document.getElementById('screen-heatmap').style.display = 'none';
+  document.getElementById('screen-doc').style.display = 'none';
+  document.getElementById('screen-connect').style.display = 'block';
+  document.getElementById('topbar-right').innerHTML = '';
+}
+
+/* ═══════════════════════════════════
+   Load document revisions
+═══════════════════════════════════ */
+function extractDocId(url) {
+  const m = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+async function loadDoc() {
+  clearError();
+  const url  = document.getElementById('doc-url').value.trim();
+  const docId = extractDocId(url);
+  if (!docId) {
+    showError('That doesn\'t look like a valid Google Doc URL. Make sure it includes "/document/d/" in the address.');
+    return;
+  }
+
+  const btn   = document.getElementById('load-btn');
+  const label = document.getElementById('load-btn-label');
+  btn.disabled = true;
+  label.innerHTML = '<span class="spinner"></span>';
+  setStatus('Fetching your writing history…', 'amber');
+
+  try {
+    dailyData = await fetchAllRevisions(docId);
+    showHeatmap();
+  } catch (e) {
+    showError('Could not load revisions: ' + e.message +
+      '. Make sure you have access to this document and that the Drive API is enabled.');
+    setStatus('Error loading document', 'red');
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Load history';
+  }
+}
+
+async function fetchAllRevisions(docId) {
+  const headers  = { Authorization: 'Bearer ' + accessToken };
+  const data     = {};
+  let pageToken  = null;
+
+  do {
+    let url = `https://www.googleapis.com/drive/v3/files/${docId}/revisions` +
+              `?fields=revisions(modifiedTime),nextPageToken&pageSize=200`;
+    if (pageToken) url += '&pageToken=' + pageToken;
+
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || ('HTTP ' + resp.status));
+    }
+    const json = await resp.json();
+    for (const rev of (json.revisions || [])) {
+      const day = rev.modifiedTime.slice(0, 10);
+      data[day] = (data[day] || 0) + 1;
+    }
+    pageToken = json.nextPageToken || null;
+  } while (pageToken);
+
+  return data;
+}
+
+/* ═══════════════════════════════════
+   Heatmap rendering
+═══════════════════════════════════ */
+function showHeatmap() {
+  document.getElementById('screen-doc').style.display = 'none';
+  document.getElementById('screen-heatmap').style.display = 'block';
+
+  const dates = Object.keys(dailyData);
+  allYears = [...new Set(dates.map(d => d.slice(0, 4)))].sort().reverse();
+  if (!allYears.length) allYears = [String(new Date().getFullYear())];
+  if (!allYears.includes(String(currentYear))) currentYear = parseInt(allYears[0]);
+
+  renderYears();
+  renderStats();
+  renderCalendar();
+}
+
+function renderYears() {
+  document.getElementById('year-row').innerHTML = allYears.map(y =>
+    `<button class="year-pill${String(currentYear) === y ? ' active' : ''}"
+             onclick="selectYear(${y})">${y}</button>`
+  ).join('');
+}
+
+function selectYear(y) {
+  currentYear  = y;
+  currentMonth = new Date().getMonth();
+  renderYears();
+  renderStats();
+  renderCalendar();
+}
+
+function renderStats() {
+  const prefix   = String(currentYear);
+  const entries  = Object.entries(dailyData).filter(([k]) => k.startsWith(prefix));
+  const days     = entries.filter(([, v]) => v > 0).length;
+  const total    = entries.reduce((s, [, v]) => s + v, 0);
+
+  /* streak calc */
+  let streak = 0, maxStreak = 0, cur = 0;
+  const todayStr = new Date().toISOString().slice(0, 10);
+  for (let i = 0; i < 730; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const k = d.toISOString().slice(0, 10);
+    if (!k.startsWith(prefix) && i > 10) break;
+    if ((dailyData[k] || 0) > 0) {
+      cur++;
+      maxStreak = Math.max(maxStreak, cur);
+      if (i <= 1) streak = cur;
+    } else { cur = 0; if (i === 0) streak = 0; }
+  }
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Days written (${prefix})</div><div class="stat-value green">${days}</div></div>
+    <div class="stat-card"><div class="stat-label">Total auto-saves</div><div class="stat-value">${total.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">Current streak</div><div class="stat-value green">${streak}d</div></div>
+    <div class="stat-card"><div class="stat-label">Longest streak</div><div class="stat-value">${maxStreak}d</div></div>
+  `;
+}
+
+function level(count, max) {
+  if (!count || max <= 0) return 0;
+  const r = count / max;
+  if (r <= 0.12) return 1;
+  if (r <= 0.30) return 2;
+  if (r <= 0.55) return 3;
+  if (r <= 0.80) return 4;
+  return 5;
+}
+
+function renderCalendar() {
+  document.getElementById('month-title').textContent =
+    MONTHS[currentMonth] + ' ' + currentYear;
+
+  const prefix      = String(currentYear) + '-' + String(currentMonth + 1).padStart(2, '0') + '-';
+  const firstDay    = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const todayKey    = new Date().toISOString().slice(0, 10);
+
+  const counts = [];
+  for (let d = 1; d <= daysInMonth; d++)
+    counts.push(dailyData[prefix + String(d).padStart(2, '0')] || 0);
+  const maxCount = Math.max(...counts, 1);
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+
+  /* empty cells before 1st */
+  for (let i = 0; i < firstDay; i++) {
+    const el = document.createElement('div');
+    el.className = 'day-cell empty';
+    el.setAttribute('aria-hidden', 'true');
+    grid.appendChild(el);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key   = prefix + String(d).padStart(2, '0');
+    const count = dailyData[key] || 0;
+    const lv    = level(count, maxCount);
+
+    const el    = document.createElement('div');
+    el.className = `day-cell l${lv}${key === todayKey ? ' today' : ''}`;
+    el.setAttribute('role', 'gridcell');
+    el.setAttribute('aria-label', `${key}: ${count} revisions`);
+    el.dataset.key   = key;
+    el.dataset.count = count;
+    el.dataset.day   = d;
+
+    const num = document.createElement('span');
+    num.className   = 'day-num';
+    num.textContent = d;
+    num.setAttribute('aria-hidden', 'true');
+    el.appendChild(num);
+
+    el.addEventListener('mouseenter', showTooltip);
+    el.addEventListener('mouseleave', hideTooltip);
+    grid.appendChild(el);
+  }
+}
+
+function prevMonth() {
+  currentMonth--;
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; renderYears(); renderStats(); }
+  renderCalendar();
+}
+function nextMonth() {
+  currentMonth++;
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; renderYears(); renderStats(); }
+  renderCalendar();
+}
+
+function backToDoc() {
+  document.getElementById('screen-heatmap').style.display = 'none';
+  document.getElementById('screen-doc').style.display = 'block';
+  setStatus('Load another document or sign out', '');
+}
+
+/* ═══════════════════════════════════
+   Tooltip
+═══════════════════════════════════ */
+const tooltip = document.getElementById('tooltip');
+
+function showTooltip(e) {
+  const cell  = e.currentTarget;
+  const count = parseInt(cell.dataset.count);
+  const key   = cell.dataset.key;
+  const d     = new Date(key + 'T12:00:00');
+
+  const intensity =
+    count === 0  ? 'No writing recorded' :
+    count <= 3   ? 'Light session' :
+    count <= 8   ? 'Good session' :
+    count <= 18  ? 'Strong session' : 'Power session 🔥';
+
+  document.getElementById('tt-date').textContent  =
+    d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  document.getElementById('tt-count').textContent =
+    count > 0 ? count + ' revision' + (count !== 1 ? 's' : '') + ' saved' : '—';
+  document.getElementById('tt-label').textContent = intensity;
+
+  tooltip.style.display = 'block';
+  const rect = cell.getBoundingClientRect();
+  const x    = Math.min(rect.left + rect.width / 2 - 85, window.innerWidth - 190);
+  const y    = rect.top - 88;
+  tooltip.style.left = Math.max(8, x) + 'px';
+  tooltip.style.top  = (y < 8 ? rect.bottom + 8 : y) + 'px';
+}
+
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+/* ═══════════════════════════════════
+   UI helpers
+═══════════════════════════════════ */
+function setStatus(msg, color) {
+  document.getElementById('status-text').textContent = msg;
+  const dot = document.getElementById('status-dot');
+  dot.className = 'dot ' + (color === 'amber' ? 'dot-amber' : color === 'red' ? 'dot-red' : 'dot-green');
+}
+
+function showError(msg) {
+  const box = document.getElementById('error-box');
+  box.textContent = msg;
+  box.style.display = 'block';
+  setStatus('Something went wrong', 'red');
+}
+
+function clearError() {
+  const box = document.getElementById('error-box');
+  box.style.display = 'none';
+  box.textContent   = '';
+}
+</script>
+</body>
+</html>
