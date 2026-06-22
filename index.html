@@ -5,13 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Writing Habit Tracker</title>
 
-  <!-- ═══════════════════════════════════════════════════
-       STEP 1: Paste your Google OAuth Client ID below.
-       Replace the empty string with your actual Client ID.
-       Example: '123456789-abc.apps.googleusercontent.com'
-  ═══════════════════════════════════════════════════ -->
   <script>
-    const GOOGLE_CLIENT_ID = '690206550919-k1nnti39ndrfrh00j3eoqbq64vub4ai8.apps.googleusercontent.com';   // ← PASTE YOUR CLIENT ID HERE
+    // Client ID is loaded securely from Vercel environment variable via /api/config
+    // Do NOT paste your Client ID here — it is kept safe on the server
+    let GOOGLE_CLIENT_ID = '';
   </script>
 
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -373,9 +370,7 @@
     </button>
     <p class="note">Read-only access &middot; Your data never leaves your browser &middot; Free forever</p>
     <div id="client-id-warning" style="display:none; margin-top:16px; font-size:12px; color:#A32D2D; background:#FCEBEB; border-radius:8px; padding:10px 14px; text-align:left; line-height:1.6;">
-      ⚠️ <strong>Client ID not set.</strong> Open this HTML file in a text editor, find the line<br>
-      <code style="background:rgba(0,0,0,0.08); border-radius:4px; padding:1px 5px;">const GOOGLE_CLIENT_ID = '';</code><br>
-      and paste your Google OAuth Client ID between the quotes. See the setup guide below.
+      ⚠️ <strong>Google Client ID not found.</strong> Make sure you have added <code style="background:rgba(0,0,0,0.08); border-radius:4px; padding:1px 5px;">GOOGLE_CLIENT_ID</code> as an Environment Variable in your Vercel project settings, then redeploy.
     </div>
   </div>
 
@@ -536,6 +531,7 @@ let dailyData    = {};          // { "YYYY-MM-DD": revisionCount }
 let currentYear  = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
 let allYears     = [];
+let globalMax    = 1;   // max words added on any single day — used for colour scale
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -545,8 +541,19 @@ const MONTHS = [
 /* ═══════════════════════════════════
    Boot
 ═══════════════════════════════════ */
-window.addEventListener('load', () => {
-  if (!GOOGLE_CLIENT_ID) {
+window.addEventListener('load', async () => {
+  // Securely fetch the Client ID from Vercel environment variable via /api/config
+  try {
+    const resp = await fetch('/api/config');
+    if (!resp.ok) throw new Error('Config endpoint returned ' + resp.status);
+    const data = await resp.json();
+    if (data.clientId) {
+      GOOGLE_CLIENT_ID = data.clientId;
+    } else {
+      throw new Error(data.error || 'No clientId in response');
+    }
+  } catch (e) {
+    console.error('Could not load config:', e);
     document.getElementById('client-id-warning').style.display = 'block';
     document.getElementById('sign-in-btn').disabled = true;
     document.getElementById('sign-in-btn').style.opacity = '0.5';
@@ -643,27 +650,60 @@ async function loadDoc() {
 }
 
 async function fetchAllRevisions(docId) {
-  const headers  = { Authorization: 'Bearer ' + accessToken };
-  const data     = {};
-  let pageToken  = null;
+  const headers = { Authorization: 'Bearer ' + accessToken };
 
+  // Step 1: get all revision IDs and their dates
+  const revisions = [];
+  let pageToken = null;
   do {
     let url = `https://www.googleapis.com/drive/v3/files/${docId}/revisions` +
-              `?fields=revisions(modifiedTime),nextPageToken&pageSize=200`;
+              `?fields=revisions(id,modifiedTime),nextPageToken&pageSize=200`;
     if (pageToken) url += '&pageToken=' + pageToken;
-
     const resp = await fetch(url, { headers });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err?.error?.message || ('HTTP ' + resp.status));
     }
     const json = await resp.json();
-    for (const rev of (json.revisions || [])) {
-      const day = rev.modifiedTime.slice(0, 10);
-      data[day] = (data[day] || 0) + 1;
-    }
+    revisions.push(...(json.revisions || []));
     pageToken = json.nextPageToken || null;
   } while (pageToken);
+
+  if (!revisions.length) return {};
+
+  // Step 2: fetch plain-text export for each revision to count words
+  // We do this in batches of 5 to avoid hammering the API
+  const wordCounts = new Array(revisions.length).fill(0);
+  const BATCH = 5;
+
+  setStatus(`Fetching ${revisions.length} revisions for word count… (this may take a moment)`, 'amber');
+
+  for (let i = 0; i < revisions.length; i += BATCH) {
+    const batch = revisions.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (rev, bi) => {
+      try {
+        const exportUrl = `https://www.googleapis.com/drive/v3/files/${docId}/export` +
+                          `?mimeType=text/plain&revisionId=${rev.id}`;
+        const r = await fetch(exportUrl, { headers });
+        if (!r.ok) { wordCounts[i + bi] = 0; return; }
+        const text = await r.text();
+        // Approximate word count: split on whitespace
+        wordCounts[i + bi] = text.trim().split(/\s+/).filter(Boolean).length;
+      } catch { wordCounts[i + bi] = 0; }
+    }));
+    // Update progress
+    const pct = Math.round(((i + BATCH) / revisions.length) * 100);
+    setStatus(`Analysing writing history… ${Math.min(pct, 100)}%`, 'amber');
+  }
+
+  // Step 3: compute words ADDED per day by diffing consecutive revision word counts
+  const data = {};
+  for (let i = 0; i < revisions.length; i++) {
+    const day   = revisions[i].modifiedTime.slice(0, 10);
+    const prev  = i === 0 ? 0 : wordCounts[i - 1];
+    const added = Math.max(0, wordCounts[i] - prev); // only count additions, not deletions
+    data[day]   = (data[day] || 0) + added;
+  }
 
   return data;
 }
@@ -679,6 +719,9 @@ function showHeatmap() {
   allYears = [...new Set(dates.map(d => d.slice(0, 4)))].sort().reverse();
   if (!allYears.length) allYears = [String(new Date().getFullYear())];
   if (!allYears.includes(String(currentYear))) currentYear = parseInt(allYears[0]);
+
+  // Compute global max once so ALL months use the same colour scale
+  globalMax = Math.max(...Object.values(dailyData), 1);
 
   renderYears();
   renderStats();
@@ -722,15 +765,16 @@ function renderStats() {
 
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card"><div class="stat-label">Days written (${prefix})</div><div class="stat-value green">${days}</div></div>
-    <div class="stat-card"><div class="stat-label">Total auto-saves</div><div class="stat-value">${total.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">Words added (${prefix})</div><div class="stat-value">${total.toLocaleString()}</div></div>
     <div class="stat-card"><div class="stat-label">Current streak</div><div class="stat-value green">${streak}d</div></div>
     <div class="stat-card"><div class="stat-label">Longest streak</div><div class="stat-value">${maxStreak}d</div></div>
   `;
 }
 
-function level(count, max) {
-  if (!count || max <= 0) return 0;
-  const r = count / max;
+function level(count) {
+  // Always scale against the global max so every month is comparable
+  if (!count || globalMax <= 0) return 0;
+  const r = count / globalMax;
   if (r <= 0.12) return 1;
   if (r <= 0.30) return 2;
   if (r <= 0.55) return 3;
@@ -747,11 +791,6 @@ function renderCalendar() {
   const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
   const todayKey    = new Date().toISOString().slice(0, 10);
 
-  const counts = [];
-  for (let d = 1; d <= daysInMonth; d++)
-    counts.push(dailyData[prefix + String(d).padStart(2, '0')] || 0);
-  const maxCount = Math.max(...counts, 1);
-
   const grid = document.getElementById('cal-grid');
   grid.innerHTML = '';
 
@@ -766,7 +805,7 @@ function renderCalendar() {
   for (let d = 1; d <= daysInMonth; d++) {
     const key   = prefix + String(d).padStart(2, '0');
     const count = dailyData[key] || 0;
-    const lv    = level(count, maxCount);
+    const lv    = level(count);
 
     const el    = document.createElement('div');
     el.className = `day-cell l${lv}${key === todayKey ? ' today' : ''}`;
@@ -817,15 +856,15 @@ function showTooltip(e) {
   const d     = new Date(key + 'T12:00:00');
 
   const intensity =
-    count === 0  ? 'No writing recorded' :
-    count <= 3   ? 'Light session' :
-    count <= 8   ? 'Good session' :
-    count <= 18  ? 'Strong session' : 'Power session 🔥';
+    count === 0    ? 'No writing recorded' :
+    count <= 50    ? 'Light session' :
+    count <= 200   ? 'Good session' :
+    count <= 500   ? 'Strong session' : 'Power session 🔥';
 
   document.getElementById('tt-date').textContent  =
     d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   document.getElementById('tt-count').textContent =
-    count > 0 ? count + ' revision' + (count !== 1 ? 's' : '') + ' saved' : '—';
+    count > 0 ? '~' + count.toLocaleString() + ' words added' : '—';
   document.getElementById('tt-label').textContent = intensity;
 
   tooltip.style.display = 'block';
