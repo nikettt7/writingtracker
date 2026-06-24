@@ -531,7 +531,7 @@ let dailyData    = {};          // { "YYYY-MM-DD": revisionCount }
 let currentYear  = new Date().getFullYear();
 let currentMonth = new Date().getMonth();
 let allYears     = [];
-let globalMax    = 1;   // max words added on any single day — used for colour scale
+let globalMax    = 1;   // max sessions on any single day — used for colour scale
 
 const MONTHS = [
   'January','February','March','April','May','June',
@@ -651,60 +651,43 @@ async function loadDoc() {
 
 async function fetchAllRevisions(docId) {
   const headers = { Authorization: 'Bearer ' + accessToken };
-
-  // Step 1: get all revision IDs and their dates
-  const revisions = [];
+  const data    = {};
   let pageToken = null;
+
+  // Convert a UTC ISO timestamp to the user's LOCAL date string (YYYY-MM-DD)
+  // This fixes the timezone bug where Indian (IST = UTC+5:30) sessions were
+  // being attributed to the wrong day because Google stores times in UTC.
+  function utcToLocalDateKey(isoString) {
+    const d = new Date(isoString);
+    const yyyy = d.getFullYear();
+    const mm   = String(d.getMonth() + 1).padStart(2, '0');
+    const dd   = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  setStatus('Fetching your writing sessions…', 'amber');
+
   do {
     let url = `https://www.googleapis.com/drive/v3/files/${docId}/revisions` +
-              `?fields=revisions(id,modifiedTime),nextPageToken&pageSize=200`;
+              `?fields=revisions(modifiedTime),nextPageToken&pageSize=200`;
     if (pageToken) url += '&pageToken=' + pageToken;
+
     const resp = await fetch(url, { headers });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       throw new Error(err?.error?.message || ('HTTP ' + resp.status));
     }
     const json = await resp.json();
-    revisions.push(...(json.revisions || []));
+
+    for (const rev of (json.revisions || [])) {
+      // Use LOCAL date so Indian users see sessions on the correct calendar day
+      const day = utcToLocalDateKey(rev.modifiedTime);
+      data[day] = (data[day] || 0) + 1;
+    }
     pageToken = json.nextPageToken || null;
   } while (pageToken);
 
-  if (!revisions.length) return {};
-
-  // Step 2: fetch plain-text export for each revision to count words
-  // We do this in batches of 5 to avoid hammering the API
-  const wordCounts = new Array(revisions.length).fill(0);
-  const BATCH = 5;
-
-  setStatus(`Fetching ${revisions.length} revisions for word count… (this may take a moment)`, 'amber');
-
-  for (let i = 0; i < revisions.length; i += BATCH) {
-    const batch = revisions.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (rev, bi) => {
-      try {
-        const exportUrl = `https://www.googleapis.com/drive/v3/files/${docId}/export` +
-                          `?mimeType=text/plain&revisionId=${rev.id}`;
-        const r = await fetch(exportUrl, { headers });
-        if (!r.ok) { wordCounts[i + bi] = 0; return; }
-        const text = await r.text();
-        // Approximate word count: split on whitespace
-        wordCounts[i + bi] = text.trim().split(/\s+/).filter(Boolean).length;
-      } catch { wordCounts[i + bi] = 0; }
-    }));
-    // Update progress
-    const pct = Math.round(((i + BATCH) / revisions.length) * 100);
-    setStatus(`Analysing writing history… ${Math.min(pct, 100)}%`, 'amber');
-  }
-
-  // Step 3: compute words ADDED per day by diffing consecutive revision word counts
-  const data = {};
-  for (let i = 0; i < revisions.length; i++) {
-    const day   = revisions[i].modifiedTime.slice(0, 10);
-    const prev  = i === 0 ? 0 : wordCounts[i - 1];
-    const added = Math.max(0, wordCounts[i] - prev); // only count additions, not deletions
-    data[day]   = (data[day] || 0) + added;
-  }
-
+  setStatus('Loaded successfully!', '');
   return data;
 }
 
@@ -765,7 +748,7 @@ function renderStats() {
 
   document.getElementById('stats-row').innerHTML = `
     <div class="stat-card"><div class="stat-label">Days written (${prefix})</div><div class="stat-value green">${days}</div></div>
-    <div class="stat-card"><div class="stat-label">Words added (${prefix})</div><div class="stat-value">${total.toLocaleString()}</div></div>
+    <div class="stat-card"><div class="stat-label">Writing sessions (${prefix})</div><div class="stat-value">${total.toLocaleString()}</div></div>
     <div class="stat-card"><div class="stat-label">Current streak</div><div class="stat-value green">${streak}d</div></div>
     <div class="stat-card"><div class="stat-label">Longest streak</div><div class="stat-value">${maxStreak}d</div></div>
   `;
@@ -810,7 +793,7 @@ function renderCalendar() {
     const el    = document.createElement('div');
     el.className = `day-cell l${lv}${key === todayKey ? ' today' : ''}`;
     el.setAttribute('role', 'gridcell');
-    el.setAttribute('aria-label', `${key}: ${count} revisions`);
+    el.setAttribute('aria-label', `${key}: ${count} writing sessions`);
     el.dataset.key   = key;
     el.dataset.count = count;
     el.dataset.day   = d;
@@ -856,15 +839,16 @@ function showTooltip(e) {
   const d     = new Date(key + 'T12:00:00');
 
   const intensity =
-    count === 0    ? 'No writing recorded' :
-    count <= 50    ? 'Light session' :
-    count <= 200   ? 'Good session' :
-    count <= 500   ? 'Strong session' : 'Power session 🔥';
+    count === 0 ? 'No writing recorded' :
+    count === 1 ? 'Quick check-in' :
+    count <= 3  ? 'Light session' :
+    count <= 6  ? 'Good session' :
+    count <= 10 ? 'Strong session' : 'Power session 🔥';
 
   document.getElementById('tt-date').textContent  =
     d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   document.getElementById('tt-count').textContent =
-    count > 0 ? '~' + count.toLocaleString() + ' words added' : '—';
+    count > 0 ? count + ' writing session' + (count !== 1 ? 's' : '') : '—';
   document.getElementById('tt-label').textContent = intensity;
 
   tooltip.style.display = 'block';
